@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador 3D de Turborreactor | Aerospace Lab</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <!-- Three.js & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        chakra: ['Chakra Petch', 'sans-serif'],
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        darkBg: '#090d14',
+                        panelBg: 'rgba(15, 23, 42, 0.75)',
+                        cyanGlow: '#00f0ff',
+                        orangeGlow: '#ff5500',
+                        accentBlue: '#3b82f6',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #090d14;
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        .glass-panel {
+            background: rgba(13, 20, 36, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 240, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+        .glow-text-cyan {
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+        }
+        .glow-text-orange {
+            text-shadow: 0 0 10px rgba(255, 85, 0, 0.6);
+        }
+        .glow-border {
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.25);
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 240, 255, 0.4);
+            border-radius: 2px;
+        }
+        /* Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 22px;
+            width: 12px;
+            border-radius: 2px;
+            background: #00f0ff;
+            cursor: pointer;
+            box-shadow: 0 0 10px #00f0ff;
+            margin-top: -8px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            border: 1px solid rgba(0, 240, 255, 0.2);
+        }
+    </style>
+</head>
+<body class="font-sans antialiased overflow-hidden">
+
+    <!-- 3D Viewport Canvas Container -->
+    <div id="canvas-container" class="absolute inset-0 z-0"></div>
+
+    <!-- UI Overlay Grid -->
+    <div class="relative z-10 flex flex-col justify-between h-screen w-screen p-4 md:p-6 pointer-events-none">
+        
+        <!-- Header / Navigation Bar -->
+        <header class="flex justify-between items-center w-full pointer-events-auto">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-lg bg-cyan-950/80 border border-cyan-500/40 flex items-center justify-center text-cyan-400 text-xl font-bold font-chakra glow-border">
+                    <i class="fa-solid fa-plane-up"></i>
+                </div>
+                <div>
+                    <h1 class="font-chakra text-xl md:text-2xl font-bold tracking-wider text-white flex items-center gap-2">
+                        TURBOJET <span class="text-cyan-400 text-xs px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/30 font-mono">SIM-3D</span>
+                    </h1>
+                    <p class="text-xs text-slate-400 font-mono">LABORATORIO DE PROPULSIÓN TERMODINÁMICA</p>
+                </div>
+            </div>
+
+            <!-- View Modes & Controls Top Right -->
+            <div class="flex items-center space-x-2 glass-panel p-1.5 rounded-lg">
+                <span id="phase-label" class="px-2 text-[10px] font-mono text-amber-300 w-20 text-center">APAGADO</span>
+                <button id="btn-fan" class="px-3 py-1.5 rounded text-xs font-chakra font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition-all"><i class="fa-solid fa-fan mr-1.5"></i> TURBORREACTOR</button>
+                <button id="btn-sound" class="px-3 py-1.5 rounded text-xs font-chakra font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition-all"><i class="fa-solid fa-volume-high"></i></button>
+                <button id="btn-cutaway" class="px-3 py-1.5 rounded text-xs font-chakra font-semibold transition-all duration-200 bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30">
+                    <i class="fa-solid fa-scissors mr-1.5"></i> VISTA DE CORTE
+                </button>
+                <button id="btn-reset-cam" class="px-3 py-1.5 rounded text-xs font-chakra font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition-all">
+                    <i class="fa-solid fa-video mr-1.5"></i> REINICIAR CÁMARA
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Middle Area: Interactive Selectors & Info Modal -->
+        <div class="flex justify-between items-start my-auto w-full pointer-events-none">
+            
+            <!-- Component Selector Bar (Left Side) -->
+            <div class="flex flex-col space-y-2 pointer-events-auto max-w-[200px]">
+                <span class="text-[10px] font-mono tracking-widest text-cyan-400/70 uppercase px-1">Secciones del Motor</span>
+                <button data-section="all" class="section-btn active px-3 py-2 rounded-lg text-left text-xs font-chakra font-medium transition-all bg-slate-900/80 text-white border border-cyan-500/50 glow-border">
+                    <i class="fa-solid fa-layer-group text-cyan-400 mr-2"></i>Vista General
+                </button>
+                <button data-section="inlet" class="section-btn px-3 py-2 rounded-lg text-left text-xs font-chakra font-medium transition-all bg-slate-900/40 text-slate-400 border border-slate-800 hover:border-slate-700 hover:text-slate-200">
+                    <i class="fa-solid fa-wind text-blue-400 mr-2"></i>1. Admisión (Inlet)
+                </button>
+                <button data-section="compressor" class="section-btn px-3 py-2 rounded-lg text-left text-xs font-chakra font-medium transition-all bg-slate-900/40 text-slate-400 border border-slate-800 hover:border-slate-700 hover:text-slate-200">
+                    <i class="fa-solid fa-fan text-cyan-400 mr-2"></i>2. Compresor Axial
+                </button>
+                <button data-section="combustor" class="section-btn px-3 py-2 rounded-lg text-left text-xs font-chakra font-medium transition-all bg-slate-900/40 text-slate-400 border border-slate-800 hover:border-slate-700 hover:text-slate-200">
+                    <i class="fa-solid fa-fire text-orange-500 mr-2"></i>3. Cámara Combustión
+                </button>
+                <button data-section="turbine" class="section-btn px-3 py-2 rounded-lg text-left text-xs font-chakra font-medium transition-all bg-slate-900/40 text-slate-400 border border-slate-800 hover:border-slate-700 hover:text-slate-200">
+                    <i class="fa-solid fa-compact-disc text-amber-400 mr-2"></i>4. Turbina de Gas
+                </button>
+                <button data-section="nozzle" class="section-btn px-3 py-2 rounded-lg text-left text-xs font-chakra font-medium transition-all bg-slate-900/40 text-slate-400 border border-slate-800 hover:border-slate-700 hover:text-slate-200">
+                    <i class="fa-solid fa-meteor text-red-500 mr-2"></i>5. Tobera de Escape
+                </button>
+                <div class="px-1 pt-2">
+                    <span class="text-[10px] font-mono tracking-widest text-cyan-400/70 uppercase">Vista explosionada</span>
+                    <input type="range" id="slider-explode" min="0" max="100" value="0" class="w-full mt-1">
+                </div>
+            </div>
+
+            <!-- Dynamic Info Popover (Right Side) -->
+            <div id="info-card" class="glass-panel p-5 rounded-xl max-w-sm w-full pointer-events-auto transition-all duration-300 transform translate-x-0 opacity-100">
+                <div class="flex justify-between items-center border-b border-slate-700/60 pb-3 mb-3">
+                    <h3 id="info-title" class="font-chakra font-bold text-lg text-cyan-300 flex items-center gap-2">
+                        <i class="fa-solid fa-circle-info"></i> Ciclo Brayton (Turborreactor)
+                    </h3>
+                    <span id="info-tag" class="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">TERMODINÁMICA</span>
+                </div>
+                <p id="info-desc" class="text-xs text-slate-300 leading-relaxed mb-4">
+                    El motor turborreactor funciona bajo el Ciclo Brayton: compresión isentrópica, adición de calor a presión constante, expansión isentrópica en la turbina y rechazo de calor.
+                </p>
+                <div class="grid grid-cols-2 gap-2 text-xs font-mono bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80">
+                    <div>
+                        <span class="text-slate-500 block text-[10px]">ESTADO FLUIDO</span>
+                        <span id="info-stat-1" class="text-cyan-400 font-semibold">Flujo Continuo</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-500 block text-[10px]">EFICIENCIA EST.</span>
+                        <span id="info-stat-2" class="text-emerald-400 font-semibold">~38 - 42 %</span>
+                    </div>
+                </div>
+                <span class="text-slate-500 block text-[10px] font-mono mt-3">DIAGRAMA T-s (CICLO BRAYTON EN VIVO)</span>
+                <canvas id="ts-canvas" width="330" height="150" class="w-full mt-1 rounded bg-slate-950/60 border border-slate-800/80" style="height:auto"></canvas>
+            </div>
+        </div>
+
+        <!-- Telemetry Gauges & Cockpit Controls Bar (Bottom) -->
+        <footer class="w-full pointer-events-auto flex flex-col md:flex-row items-stretch gap-4">
+            
+            <!-- Telemetry Gauges Section -->
+            <div class="glass-panel p-4 rounded-xl flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3 items-center">
+                
+                <!-- RPM Gauge -->
+                <div class="flex flex-col items-center bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/80">
+                    <span class="text-[10px] font-mono text-slate-400 tracking-wider">RPM ROTOR (N1)</span>
+                    <div class="flex items-baseline gap-1 my-1">
+                        <span id="gauge-rpm" class="font-chakra font-bold text-2xl text-cyan-400 glow-text-cyan">0</span>
+                        <span class="text-xs font-mono text-slate-500">%</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div id="bar-rpm" class="bg-cyan-400 h-full w-0 transition-all duration-150"></div>
+                    </div>
+                    <span id="gauge-n2" class="text-[10px] font-mono text-slate-500 mt-1">N2 0%</span>
+                </div>
+
+                <!-- EGT Gauge -->
+                <div class="flex flex-col items-center bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/80">
+                    <span class="text-[10px] font-mono text-slate-400 tracking-wider">TEMP. ESCAPE (EGT)</span>
+                    <div class="flex items-baseline gap-1 my-1">
+                        <span id="gauge-egt" class="font-chakra font-bold text-2xl text-amber-400">15</span>
+                        <span class="text-xs font-mono text-slate-500">°C</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div id="bar-egt" class="bg-amber-500 h-full w-0 transition-all duration-150"></div>
+                    </div>
+                </div>
+
+                <!-- Pressure Ratio Gauge -->
+                <div class="flex flex-col items-center bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/80">
+                    <span class="text-[10px] font-mono text-slate-400 tracking-wider">PRESIÓN (P2/P1)</span>
+                    <div class="flex items-baseline gap-1 my-1">
+                        <span id="gauge-press" class="font-chakra font-bold text-2xl text-blue-400">1.0</span>
+                        <span class="text-xs font-mono text-slate-500">ratio</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div id="bar-press" class="bg-blue-500 h-full w-0 transition-all duration-150"></div>
+                    </div>
+                </div>
+
+                <!-- Net Thrust Gauge -->
+                <div class="flex flex-col items-center bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/80">
+                    <span class="text-[10px] font-mono text-slate-400 tracking-wider">EMPUJE NETO</span>
+                    <div class="flex items-baseline gap-1 my-1">
+                        <span id="gauge-thrust" class="font-chakra font-bold text-2xl text-orange-500 glow-text-orange">0.0</span>
+                        <span class="text-xs font-mono text-slate-500">kN</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div id="bar-thrust" class="bg-orange-500 h-full w-0 transition-all duration-150"></div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Main Throttle & Engine Controls Panel -->
+            <div class="glass-panel p-4 rounded-xl flex items-center justify-between gap-4 md:w-[380px]">
+                
+                <!-- Master Ignition Switch -->
+                <button id="btn-ignition" class="flex flex-col items-center justify-center p-3 rounded-xl border border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-900/40 transition-all w-20 h-full">
+                    <i class="fa-solid fa-power-off text-xl mb-1"></i>
+                    <span class="text-[10px] font-chakra font-bold tracking-wider">IGNICIÓN</span>
+                </button>
+
+                <!-- Throttle Slider Control -->
+                <div class="flex-1 flex flex-col justify-center">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-chakra font-semibold text-slate-300">PALANCA EMPUJE (THROTTLE)</span>
+                        <span id="throttle-val" class="font-mono text-xs text-cyan-400 font-bold">0%</span>
+                    </div>
+                    <input type="range" id="slider-throttle" min="0" max="100" value="0" class="w-full">
+                    <div class="flex justify-between text-[9px] font-mono text-slate-500 mt-1">
+                        <span>OFF</span>
+                        <span>IDLE</span>
+                        <span>MIL</span>
+                        <span class="text-orange-400">MAX</span>
+                    </div>
+                </div>
+
+                <!-- Afterburner Toggle -->
+                <button id="btn-afterburner" disabled class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-700 bg-slate-900/40 text-slate-600 opacity-50 cursor-not-allowed transition-all w-20 h-full">
+                    <i class="fa-solid fa-fire-flame-curved text-xl mb-1"></i>
+                    <span class="text-[9px] font-chakra font-bold tracking-wider">POST-COMB</span>
+                </button>
+
+            </div>
+
+        </footer>
+
+    </div>
+
+    <!-- Application Script -->
+    <script>
+        // --- 1. SIMULATION STATE DATA ---
+        const engineState = {
+            ignited: false,
+            throttle: 0, // 0 to 100%
+            rpm: 0,      // Calculated target RPM %
+            currentRpm: 0, // Smooth lerped RPM
+            egt: 15,     // Ambient 15 C to ~850 C
+            pressureRatio: 1.0, // 1.0 to 18.5
+            thrust: 0.0, // 0 to 120 kN
+            afterburner: false,
+            cutawayView: true,
+            activeSection: 'all',
+            startT: 0, phase: 'APAGADO', burning: false, egtF: 15, n2: 0, fanMode: false, explode: 0
+        };
+
+        const sectionData = {
+            all: {
+                title: "Ciclo Brayton (Turborreactor)",
+                tag: "TERMODINÁMICA",
+                desc: "Un motor turborreactor convierte energía química de combustible en empuje mediante el ciclo continuo Brayton: Admisión, Compresión, Combustión y Expansión/Escape.",
+                stat1: "Flujo Continuo",
+                stat2: "~38 - 42 %"
+            },
+            inlet: {
+                title: "1. Difusor de Admisión (Inlet)",
+                tag: "AERODINÁMICA",
+                desc: "Captura aire atmosférico a alta velocidad de vuelo y lo desacelera ligeramente para aumentar la presión estática antes de entrar a la primera etapa de compresión.",
+                stat1: "Mach 0.4 - 0.6",
+                stat2: "P1 (Ambiente)"
+            },
+            compressor: {
+                title: "2. Compresor Axial",
+                tag: "COMPRESIÓN",
+                desc: "Múltiples etapas de álabes rotatorios y estáticos aceleran y comprimen gradualmente el aire. Eleva exponencialmente la presión (P2) y la densidad del fluido.",
+                stat1: "Ratio 18:1",
+                stat2: "Temp ~450 °C"
+            },
+            combustor: {
+                title: "3. Cámara de Combustión",
+                tag: "COMBUSTIÓN",
+                desc: "Se inyecta queroseno (JP-8) de forma continua en la corriente de aire comprimido. La mezcla se quema a presión prácticamente constante, alcanzando altísimas temperaturas.",
+                stat1: "Temp > 1400 °C",
+                stat2: "Presión Const."
+            },
+            turbine: {
+                title: "4. Turbina de Gas",
+                tag: "EXPANSIÓN",
+                desc: "Los gases calientes expandidos hacen girar los álabes de la turbina. Extrae únicamente el trabajo mecánico necesario para impulsar el compresor mediante el eje axial central.",
+                stat1: "Trabajo Requerido",
+                stat2: "RPM Elevadas"
+            },
+            nozzle: {
+                title: "5. Tobera de Escape",
+                tag: "PROPULSIÓN",
+                desc: "Acelera los gases de escape a velocidades supersónicas. La 3ª Ley de Newton transforma este diferencial de cantidad de movimiento en empuje directo hacia adelante.",
+                stat1: "Vel. > Mach 1.5",
+                stat2: "F = m_dot * Ve"
+            }
+        };
+
+        // --- 2. THREE.JS SCENE SETUP ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x090d14, 0.03);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(12, 6, 16);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.localClippingEnabled = true;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxDistance = 40;
+        controls.minDistance = 5;
+        controls.target.set(0, 0, 0);
+
+        // --- 3. LIGHTING ---
+        const ambientLight = new THREE.AmbientLight(0x1a2436, 1.5);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
+        dirLight.position.set(10, 20, 15);
+        scene.add(dirLight);
+
+        const cyanSpot = new THREE.PointLight(0x00f0ff, 3, 20);
+        cyanSpot.position.set(-6, 2, 4);
+        scene.add(cyanSpot);
+
+        const orangeSpot = new THREE.PointLight(0xff5500, 2, 20);
+        orangeSpot.position.set(3, 0, 0);
+        scene.add(orangeSpot);
+
+        // --- 4. ENGINE 3D PROCEDURAL MODEL GENERATION ---
+        const engineGroup = new THREE.Group();
+        const rotorGroup = new THREE.Group(); // Rotating shaft + blades
+        const casingGroup = new THREE.Group(); // Outer shell
+        engineGroup.add(rotorGroup);
+        engineGroup.add(casingGroup);
+        scene.add(engineGroup);
+
+        // Materials with high-fidelity finish like the reference
+        const metalMaterial = new THREE.MeshStandardMaterial({
+            color: 0x9aa8b8,
+            metalness: 0.9,
+            roughness: 0.25,
+        });
+
+        const darkSteelMaterial = new THREE.MeshStandardMaterial({
+            color: 0x22272e,
+            metalness: 0.85,
+            roughness: 0.4,
+        });
+
+        const titaniumMaterial = new THREE.MeshStandardMaterial({
+            color: 0xc8d4e0,
+            metalness: 0.95,
+            roughness: 0.2,
+        });
+
+        const goldTurbineMaterial = new THREE.MeshStandardMaterial({
+            color: 0xcba358,
+            metalness: 0.85,
+            roughness: 0.3,
+        });
+
+        const combustionMaterial = new THREE.MeshStandardMaterial({
+            color: 0x1a1e24,
+            emissive: 0xff4400,
+            emissiveIntensity: 0.15,
+            metalness: 0.7,
+            roughness: 0.5
+        });
+
+        const casingMaterial = new THREE.MeshStandardMaterial({
+            color: 0x333b48,
+            metalness: 0.8,
+            roughness: 0.35,
+            side: THREE.DoubleSide
+        });
+
+        const casingCutMaterial = new THREE.MeshStandardMaterial({
+            color: 0x5a6578,
+            metalness: 0.6,
+            roughness: 0.4,
+            side: THREE.DoubleSide
+        });
+
+        // Corte real: un plano de recorte elimina la mitad superior de TODO el motor
+        const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
+        const cutMats = [metalMaterial, darkSteelMaterial, titaniumMaterial, goldTurbineMaterial, combustionMaterial, casingMaterial, casingCutMaterial];
+        function applyCut() {
+            cutMats.forEach(m => { m.clippingPlanes = engineState.cutawayView ? [clipPlane] : []; m.side = THREE.DoubleSide; m.needsUpdate = true; });
+        }
+
+        // Track meshes for sectional highlight
+        const sectionMeshes = {
+            inlet: [],
+            compressor: [],
+            combustor: [],
+            turbine: [],
+            nozzle: []
+        };
+
+        // Engine Z-Axis Layout:
+        // Inlet Nose: Z = -7.0 to -5.5
+        // Compressor: Z = -5.0 to -1.5
+        // Combustor:  Z = -1.0 to 1.5
+        // Turbine:    Z = 2.0 to 4.0
+        // Nozzle/Cone:Z = 4.5 to 7.0
+
+        // A. Central Drive Shaft (Aligned along Z axis)
+        const shaftGeo = new THREE.CylinderGeometry(0.2, 0.2, 13, 24);
+        shaftGeo.rotateX(Math.PI / 2);
+        const shaftMesh = new THREE.Mesh(shaftGeo, darkSteelMaterial);
+        rotorGroup.add(shaftMesh); // Eje N1 (baja presión): delgado, pasa por dentro
+
+        // Eje N2 (alta presión): tubo hueco que gira más rápido, alrededor del N1
+        const highSpool = new THREE.Group();
+        engineGroup.add(highSpool);
+        let currentSpool = rotorGroup;
+        const hShaftGeo = new THREE.CylinderGeometry(0.5, 0.5, 6.4, 32, 1, true);
+        hShaftGeo.rotateX(Math.PI / 2);
+        const hShaft = new THREE.Mesh(hShaftGeo, titaniumMaterial);
+        hShaft.position.z = -0.4;
+        highSpool.add(hShaft);
+
+        // B. Realistic Curved Aerodynamic Blade Extrusion Helper
+        function createRealisticBladeShape(height, baseWidth, tipWidth, twistAngle) {
+            const shape = new THREE.Shape();
+            // Airfoil profile outline
+            shape.moveTo(0, 0);
+            shape.bezierCurveTo(baseWidth * 0.5, height * 0.1, baseWidth * 0.4, height * 0.9, tipWidth * 0.3, height);
+            shape.lineTo(-tipWidth * 0.3, height);
+            shape.bezierCurveTo(-baseWidth * 0.2, height * 0.5, -baseWidth * 0.4, height * 0.1, 0, 0);
+
+            const extrudeSettings = {
+                steps: 2,
+                depth: 0.04,
+                bevelEnabled: true,
+                bevelThickness: 0.015,
+                bevelSize: 0.01,
+                bevelSegments: 2
+            };
+
+            const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            geo.center();
+            return geo;
+        }
+
+        // Helper function for rotor blade stages matching reference photo
+        function createRotorStage(zPos, outerRadius, hubRadius, bladeCount, mat, isTurbine = false, bw = 0.3, tw = 0.18) {
+            const stageGroup = new THREE.Group();
+            stageGroup.position.z = zPos;
+
+            // Disk Hub
+            const hubGeo = new THREE.CylinderGeometry(hubRadius, hubRadius, 0.35, 32);
+            hubGeo.rotateX(Math.PI / 2);
+            const hubMesh = new THREE.Mesh(hubGeo, isTurbine ? goldTurbineMaterial : titaniumMaterial);
+            stageGroup.add(hubMesh);
+
+            // Disc Rim detail ring
+            const rimGeo = new THREE.TorusGeometry(hubRadius * 0.95, 0.04, 16, 32);
+            const rimMesh = new THREE.Mesh(rimGeo, darkSteelMaterial);
+            rimMesh.position.z = 0;
+            stageGroup.add(rimMesh);
+
+            // Curved Airfoil Blades around disk
+            const bladeHeight = outerRadius - hubRadius;
+            const bladeGeo = createRealisticBladeShape(bladeHeight, bw, tw, 0.3);
+
+            for (let i = 0; i < bladeCount; i++) {
+                const angle = (i / bladeCount) * Math.PI * 2;
+                // Pivote: su eje Y local apunta en dirección radial
+                const pivot = new THREE.Group();
+                pivot.position.set(Math.cos(angle) * hubRadius, Math.sin(angle) * hubRadius, 0);
+                pivot.rotation.z = angle - Math.PI / 2;
+
+                const bladeMesh = new THREE.Mesh(bladeGeo, mat);
+                bladeMesh.position.y = bladeHeight / 2;               // el álabe sube desde el cubo
+                bladeMesh.rotation.y = isTurbine ? -0.45 : 0.45;      // pitch alrededor del eje RADIAL (local)
+                pivot.add(bladeMesh);
+
+                stageGroup.add(pivot);
+            }
+
+            currentSpool.add(stageGroup);
+            return stageGroup;
+        }
+
+        // C. Inlet Aerodynamic Front Nose Cone
+        const noseConeGeo = new THREE.ConeGeometry(1.1, 2.2, 32);
+        noseConeGeo.rotateX(-Math.PI / 2);
+        const noseConeMesh = new THREE.Mesh(noseConeGeo, darkSteelMaterial);
+        noseConeMesh.position.z = -6.4;
+        rotorGroup.add(noseConeMesh);
+        sectionMeshes.inlet.push(noseConeMesh);
+
+        // Front Guide Stator Vanes (Fixed Inlet Vanes)
+        const inletGuideGroup = new THREE.Group();
+        inletGuideGroup.position.z = -5.5;
+        for (let i = 0; i < 16; i++) {
+            const angle = (i / 16) * Math.PI * 2;
+            const vaneGeo = new THREE.BoxGeometry(0.08, 1.2, 0.25);
+            const vane = new THREE.Mesh(vaneGeo, darkSteelMaterial);
+            vane.position.y = 1.6;                    // radio, en el marco local del pivote
+            const vPivot = new THREE.Group();
+            vPivot.rotation.z = angle - Math.PI / 2;  // eje Y local = radial
+            vPivot.add(vane);
+            inletGuideGroup.add(vPivot);
+        }
+        engineGroup.add(inletGuideGroup);
+        sectionMeshes.inlet.push(inletGuideGroup);
+
+        // D. Multi-stage Axial Compressor Rotors & Stators (3 Large Stages like Reference)
+        const compStages = [
+            { z: -4.4, rOuter: 2.6, rHub: 1.1, blades: 28 },
+            { z: -3.3, rOuter: 2.4, rHub: 1.2, blades: 32 },
+            { z: -2.2, rOuter: 2.2, rHub: 1.3, blades: 36 }
+        ];
+
+        compStages.forEach((stg, idx) => {
+            currentSpool = idx === 0 ? rotorGroup : highSpool; // 1ª etapa en N1, el resto en N2
+            const rotorMesh = createRotorStage(stg.z, stg.rOuter, stg.rHub, stg.blades, titaniumMaterial);
+            sectionMeshes.compressor.push(rotorMesh);
+
+            // Stator Vane Ring behind each rotor stage
+            const statorGroup = new THREE.Group();
+            statorGroup.position.z = stg.z + 0.5;
+            for (let i = 0; i < 24; i++) {
+                const angle = (i / 24) * Math.PI * 2;
+                const vaneGeo = new THREE.BoxGeometry(0.06, stg.rOuter - stg.rHub, 0.2);
+                const vane = new THREE.Mesh(vaneGeo, darkSteelMaterial);
+                vane.position.y = stg.rHub + (stg.rOuter - stg.rHub) / 2;
+                vane.rotation.y = -0.3; // ángulo de redirección (alrededor del eje radial local)
+                const sPivot = new THREE.Group();
+                sPivot.rotation.z = angle - Math.PI / 2;
+                sPivot.add(vane);
+                statorGroup.add(sPivot);
+            }
+            engineGroup.add(statorGroup);
+            sectionMeshes.compressor.push(statorGroup);
+        });
+
+        // E. Annular Combustion Chamber with Perforated Burner Liner & Injectors
+        const combustorGroup = new THREE.Group();
+        combustorGroup.position.z = 0.2;
+
+        // Outer & Inner Combustor Casing Liners
+        const outerLinerGeo = new THREE.CylinderGeometry(1.85, 1.85, 2.6, 32, 1, true);
+        outerLinerGeo.rotateX(Math.PI / 2);
+        const hc = document.createElement('canvas'); hc.width = 256; hc.height = 64;
+        const hx = hc.getContext('2d'); hx.fillStyle = '#000'; hx.fillRect(0, 0, 256, 64); hx.fillStyle = '#ff8030';
+        for (let x = 8; x < 256; x += 16) for (let y = 8; y < 64; y += 16) { hx.beginPath(); hx.arc(x, y, 3.2, 0, 7); hx.fill(); }
+        const holeTex = new THREE.CanvasTexture(hc);
+        holeTex.wrapS = holeTex.wrapT = THREE.RepeatWrapping; holeTex.repeat.set(2, 2);
+        const linerMat = new THREE.MeshStandardMaterial({ color: 0x1a1e24, emissive: 0xffffff, emissiveMap: holeTex, emissiveIntensity: 0.05, metalness: 0.7, roughness: 0.5, side: THREE.DoubleSide });
+        cutMats.push(linerMat);
+        const outerLiner = new THREE.Mesh(outerLinerGeo, linerMat);
+        combustorGroup.add(outerLiner);
+
+        const innerLinerGeo = new THREE.CylinderGeometry(0.8, 0.8, 2.6, 32, 1, true);
+        innerLinerGeo.rotateX(Math.PI / 2);
+        const innerLiner = new THREE.Mesh(innerLinerGeo, darkSteelMaterial);
+        combustorGroup.add(innerLiner);
+
+        // Fuel Injector Nozzles Ring (12 Dual Injections)
+        for (let i = 0; i < 12; i++) {
+            const angle = (i / 12) * Math.PI * 2;
+            const injectorGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.4, 16);
+            injectorGeo.rotateX(Math.PI / 2); // eje del cilindro a lo largo de Z
+            const injector = new THREE.Mesh(injectorGeo, titaniumMaterial);
+            injector.position.set(Math.cos(angle) * 1.5, Math.sin(angle) * 1.5, -1.2);
+            combustorGroup.add(injector);
+        }
+        engineGroup.add(combustorGroup);
+        sectionMeshes.combustor.push(combustorGroup);
+
+        // F. Turbine Stage & Rear Exhaust Tail Cone (Gold Alloy Blades)
+        currentSpool = highSpool;
+        const turbineStage1 = createRotorStage(2.2, 2.05, 1.2, 34, goldTurbineMaterial, true);
+        currentSpool = rotorGroup;
+        const turbineStage2 = createRotorStage(3.4, 2.2, 1.1, 30, goldTurbineMaterial, true);
+        sectionMeshes.turbine.push(turbineStage1, turbineStage2);
+
+        // Ventilador frontal (solo visible en modo turbofán), montado en el eje N1
+        currentSpool = rotorGroup;
+        const fanStage = createRotorStage(-5.9, 3.2, 1.0, 18, titaniumMaterial, false, 0.75, 0.55);
+        fanStage.visible = false;
+        sectionMeshes.inlet.push(fanStage);
+
+        // Rear Tail Cone (Exhaust Outlet)
+        const tailConeGeo = new THREE.ConeGeometry(0.9, 2.6, 32);
+        tailConeGeo.rotateX(Math.PI / 2);
+        const tailConeMesh = new THREE.Mesh(tailConeGeo, darkSteelMaterial);
+        tailConeMesh.position.z = 5.0;
+        rotorGroup.add(tailConeMesh);
+        sectionMeshes.nozzle.push(tailConeMesh);
+
+        // G. Horizontal Outer Casing Shell with Clean Longitudinal Cutaway Section
+        function buildCasing() {
+            while (casingGroup.children.length > 0) {
+                casingGroup.remove(casingGroup.children[0]);
+            }
+
+            // Engine Casing Profile along Z axis
+            const points = [
+                new THREE.Vector2(2.7, -6.6),
+                new THREE.Vector2(2.7, -4.8),
+                new THREE.Vector2(2.4, -1.8),
+                new THREE.Vector2(2.1, -0.6),
+                new THREE.Vector2(2.1, 1.5),
+                new THREE.Vector2(2.4, 3.8)
+            ];
+
+            // Cutaway removes upper 110 degrees when active
+            const startAngle = 0; // el corte queda arriba (+Y) tras girar
+            const phiLength = Math.PI * 2;
+
+            const casingGeo = new THREE.LatheGeometry(points, 64, startAngle, phiLength);
+            casingGeo.rotateX(Math.PI / 2); // LatheGeometry gira sobre Y: lo acostamos para alinearlo con el eje Z
+            const casingMesh = new THREE.Mesh(casingGeo, casingMaterial);
+            casingGroup.add(casingMesh);
+
+            // Highlight Casing Cut Edges if in Cutaway Mode
+            if (false) {
+                const rimRingGeo = new THREE.RingGeometry(1.7, 2.7, 32);
+                const rimFront = new THREE.Mesh(rimRingGeo, casingCutMaterial);
+                rimFront.position.z = -6.6;
+                casingGroup.add(rimFront);
+            }
+        }
+        buildCasing();
+
+        function latheShell(pts) {
+            const g = new THREE.LatheGeometry(pts.map(q => new THREE.Vector2(q[0], q[1])), 64);
+            g.rotateX(Math.PI / 2);
+            return g;
+        }
+        // Tobera convergente
+        const nozzleShell = new THREE.Mesh(latheShell([[2.4, 3.8], [2.05, 5.2], [1.35, 6.8]]), casingMaterial);
+        engineGroup.add(nozzleShell);
+        sectionMeshes.nozzle.push(nozzleShell);
+        // Góndola / ducto de derivación (modo turbofán)
+        const nacelle = new THREE.Mesh(latheShell([[3.35, -6.8], [3.35, -3.5], [3.0, 2.0], [2.5, 4.4]]), casingMaterial);
+        nacelle.visible = false;
+        engineGroup.add(nacelle);
+        sectionMeshes.inlet.push(nacelle);
+        applyCut();
+
+        // --- 5. DYNAMIC AIRFLOW & EXHAUST PARTICLE SYSTEMS ---
+        const particleCount = 700;
+        const pAng = new Float32Array(particleCount), pFrac = new Float32Array(particleCount);
+        const outerProf = [[-8, 2.6], [-6.6, 2.6], [-4.8, 2.55], [-1.8, 2.3], [-0.6, 2.0], [1.5, 2.0], [3.8, 2.25], [5.2, 1.85], [6.8, 1.2], [9.5, 1.0]];
+        const hubProf = [[-8, 0], [-7.5, 0], [-5.3, 1.1], [-4.4, 1.1], [-2.2, 1.3], [-1, 0.9], [2.2, 1.2], [3.4, 1.1], [3.7, 0.9], [6.3, 0], [9.5, 0]];
+        function interp(a, z) {
+            if (z <= a[0][0]) return a[0][1];
+            for (let k = 1; k < a.length; k++) {
+                if (z <= a[k][0]) { const t = (z - a[k - 1][0]) / (a[k][0] - a[k - 1][0]); return a[k - 1][1] + t * (a[k][1] - a[k - 1][1]); }
+            }
+            return a[a.length - 1][1];
+        }
+        const swirlAt = z => (z > -5 && z < -1.5) ? 1 : (z > 2 && z < 4.2 ? -0.7 : 0.08);
+        const particleGeo = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount);
+
+        // Initialize particles along Z axis (from Inlet Z=-8 to Exhaust Z=+9)
+        for (let i = 0; i < particleCount; i++) {
+            positions[i * 3 + 2] = -8 + Math.random() * 16; // Z axis
+            pAng[i] = Math.random() * Math.PI * 2;
+            pFrac[i] = 0.08 + Math.random() * 0.84;
+
+            velocities[i] = 0.06 + Math.random() * 0.05;
+
+            colors[i * 3] = 0.0;
+            colors[i * 3 + 1] = 0.8;
+            colors[i * 3 + 2] = 1.0;
+        }
+
+        particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particleGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const particleMat = new THREE.PointsMaterial({
+            size: 0.16,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.85,
+            blending: THREE.AdditiveBlending
+        });
+
+        const particleSystem = new THREE.Points(particleGeo, particleMat);
+        scene.add(particleSystem);
+
+        // Exhaust Flame Cone (Afterburner Plume)
+        const flameGeo = new THREE.ConeGeometry(1.2, 5.0, 32);
+        flameGeo.rotateX(Math.PI / 2);
+        const flameMat = new THREE.MeshBasicMaterial({
+            color: 0xff3300,
+            transparent: true,
+            opacity: 0.0,
+            blending: THREE.AdditiveBlending
+        });
+        const flameMesh = new THREE.Mesh(flameGeo, flameMat);
+        flameMesh.position.z = 7.2;
+        scene.add(flameMesh);
+
+        // Update Particle Animation along Z Axis
+        function updateParticles() {
+            const posAttr = particleSystem.geometry.attributes.position;
+            const colAttr = particleSystem.geometry.attributes.color;
+            const speedFactor = 0.05 + (engineState.currentRpm / 100) * 0.38;
+
+            for (let i = 0; i < particleCount; i++) {
+                let z = posAttr.getZ(i);
+                z += velocities[i] * speedFactor * 10;
+
+                // Loop particles back to inlet
+                if (z > 9.5) {
+                    z = -7.8;
+                }
+
+                posAttr.setZ(i, z);
+                // El flujo sigue el ducto (entre el cubo y la carcasa) y gira en compresor/turbina
+                const ang = (pAng[i] += swirlAt(z) * speedFactor * 0.1);
+                const oR = interp(outerProf, z) * 0.96, hR = interp(hubProf, z) + 0.04;
+                const rr = hR + pFrac[i] * (oR - hR);
+                posAttr.setXY(i, Math.cos(ang) * rr, Math.sin(ang) * rr);
+
+                // Thermal Color Mapping along Z position
+                let r = 0, g = 0.8, b = 1.0;
+
+                if (z < -1.5) {
+                    // Cold Inlet / Compression (Blue)
+                    r = 0.0; g = 0.7; b = 1.0;
+                } else if (z >= -1.5 && z < 0.2) {
+                    // High Compression (Cyan / Light Green)
+                    r = 0.1; g = 0.95; b = 0.7;
+                } else if (z >= 0.2 && z < 2.5) {
+                    // Combustion Chamber (Hot Orange-Red)
+                    r = 1.0; g = 0.35 + Math.random() * 0.25; b = 0.0;
+                } else {
+                    // Turbine & Exhaust Plume
+                    if (engineState.afterburner) {
+                        r = 1.0; g = 0.75; b = 0.2;
+                    } else {
+                        r = 0.95; g = 0.25; b = 0.0;
+                    }
+                }
+
+                colAttr.setXYZ(i, r, g, b);
+            }
+
+            posAttr.needsUpdate = true;
+            colAttr.needsUpdate = true;
+
+            // Flame opacity adjustment
+            const targetFlameOp = engineState.afterburner ? 0.8 : (engineState.currentRpm > 85 ? 0.3 : 0.0);
+            flameMat.opacity += (targetFlameOp - flameMat.opacity) * 0.1;
+        }
+
+        // --- 6. SIMULATION LOGIC & MATH ENGINE ---
+        function updateThermodynamics(delta) {
+            const st = engineState;
+            if (st.ignited) st.startT += delta; else st.startT = 0;
+            let rate = 1.0;
+            if (!st.ignited) { st.rpm = 0; rate = 0.45; st.burning = false; st.phase = st.currentRpm > 2 ? 'ENFRIANDO' : 'APAGADO'; }
+            else if (st.startT < 3) { st.rpm = 4 + st.startT * 5; rate = 3; st.burning = false; st.phase = 'ARRANQUE'; }
+            else if (st.startT < 5) { st.rpm = 22; rate = 1.5; st.burning = true; st.phase = 'ENCENDIDO'; }
+            else { st.rpm = 20 + st.throttle * 0.8; st.burning = true; st.phase = Math.abs(st.rpm - st.currentRpm) > 3 ? 'ACELERANDO' : 'ESTABLE'; }
+            st.currentRpm += (st.rpm - st.currentRpm) * Math.min(1, delta * rate);
+
+            const rpmRatio = st.currentRpm / 100;
+            st.n2 = st.currentRpm * 0.55 + 45 * Math.sqrt(rpmRatio);
+            const spike = (st.burning && st.startT >= 3) ? 170 * Math.exp(-(st.startT - 3) / 1.5) : 0;
+            const egtTarget = st.burning ? 15 + rpmRatio * 780 + (st.afterburner ? 350 : 0) + spike : 15 + rpmRatio * 60;
+            st.egtF += (egtTarget - st.egtF) * Math.min(1, delta * (st.burning ? 1.2 : 0.4));
+            st.egt = Math.round(st.egtF);
+            st.pressureRatio = (1.0 + rpmRatio * 17.5).toFixed(1);
+            linerMat.emissiveIntensity = st.burning ? 0.4 + rpmRatio * 2.6 : 0.05;
+            document.getElementById('phase-label').innerText = st.phase;
+            document.getElementById('gauge-n2').innerText = 'N2 ' + Math.round(st.n2) + '%';
+            let baseThrust = Math.pow(rpmRatio, 2.2) * 95;
+            if (engineState.afterburner && engineState.currentRpm > 75) {
+                baseThrust *= 1.45;
+            }
+            if (!engineState.burning) baseThrust = 0;
+            if (engineState.fanMode) baseThrust *= 1.3;
+            engineState.thrust = baseThrust.toFixed(1);
+
+            document.getElementById('gauge-rpm').innerText = Math.round(engineState.currentRpm);
+            document.getElementById('bar-rpm').style.width = `${engineState.currentRpm}%`;
+
+            document.getElementById('gauge-egt').innerText = engineState.egt;
+            document.getElementById('bar-egt').style.width = `${Math.min(100, (engineState.egt / 1200) * 100)}%`;
+
+            document.getElementById('gauge-press').innerText = engineState.pressureRatio;
+            document.getElementById('bar-press').style.width = `${(engineState.pressureRatio / 20) * 100}%`;
+
+            document.getElementById('gauge-thrust').innerText = engineState.thrust;
+            document.getElementById('bar-thrust').style.width = `${Math.min(100, (engineState.thrust / 140) * 100)}%`;
+
+            const abBtn = document.getElementById('btn-afterburner');
+            if (engineState.currentRpm > 70 && engineState.ignited) {
+                abBtn.disabled = false;
+                abBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'border-slate-700');
+                abBtn.classList.add('border-orange-500/50', 'hover:bg-orange-950/40', 'text-orange-400');
+            } else {
+                if (engineState.afterburner) toggleAfterburner(false);
+                abBtn.disabled = true;
+                abBtn.classList.add('opacity-50', 'cursor-not-allowed', 'border-slate-700');
+                abBtn.classList.remove('border-orange-500/50', 'hover:bg-orange-950/40', 'text-orange-400', 'bg-orange-600/30');
+            }
+        }
+
+        // --- 7. UI EVENT HANDLERS & INTERACTION ---
+        const slider = document.getElementById('slider-throttle');
+        const throttleValDisplay = document.getElementById('throttle-val');
+
+        slider.addEventListener('input', (e) => {
+            engineState.throttle = parseInt(e.target.value);
+            throttleValDisplay.innerText = `${engineState.throttle}%`;
+        });
+
+        const btnIgnition = document.getElementById('btn-ignition');
+        btnIgnition.addEventListener('click', () => {
+            engineState.ignited = !engineState.ignited;
+            initAudio();
+            if (engineState.ignited) engineState.startT = 0;
+            if (engineState.ignited) {
+                btnIgnition.classList.remove('border-red-500/40', 'bg-red-950/30', 'text-red-400');
+                btnIgnition.classList.add('border-emerald-500/60', 'bg-emerald-950/50', 'text-emerald-400', 'glow-border');
+                if (engineState.throttle === 0) {
+                    slider.value = 15;
+                    engineState.throttle = 15;
+                    throttleValDisplay.innerText = '15%';
+                }
+            } else {
+                btnIgnition.classList.remove('border-emerald-500/60', 'bg-emerald-950/50', 'text-emerald-400', 'glow-border');
+                btnIgnition.classList.add('border-red-500/40', 'bg-red-950/30', 'text-red-400');
+                slider.value = 0;
+                engineState.throttle = 0;
+                throttleValDisplay.innerText = '0%';
+                toggleAfterburner(false);
+            }
+        });
+
+        const btnAB = document.getElementById('btn-afterburner');
+        function toggleAfterburner(enable) {
+            engineState.afterburner = enable !== undefined ? enable : !engineState.afterburner;
+            if (engineState.afterburner) {
+                btnAB.classList.add('bg-orange-600/40', 'border-orange-400', 'text-white', 'glow-border');
+            } else {
+                btnAB.classList.remove('bg-orange-600/40', 'border-orange-400', 'text-white', 'glow-border');
+            }
+        }
+        btnAB.addEventListener('click', () => toggleAfterburner());
+
+        const btnCutaway = document.getElementById('btn-cutaway');
+        btnCutaway.addEventListener('click', () => {
+            engineState.cutawayView = !engineState.cutawayView;
+            applyCut();
+            btnCutaway.classList.toggle('bg-cyan-500/20');
+            btnCutaway.classList.toggle('bg-slate-800');
+        });
+
+        document.getElementById('btn-reset-cam').addEventListener('click', () => {
+            controls.target.set(0, 0, 0);
+            camera.position.set(12, 6, 16);
+        });
+
+        const sectionBtns = document.querySelectorAll('.section-btn');
+        sectionBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const sec = btn.getAttribute('data-section');
+                engineState.activeSection = sec;
+
+                sectionBtns.forEach(b => {
+                    b.classList.remove('bg-slate-900/80', 'text-white', 'border-cyan-500/50', 'glow-border');
+                    b.classList.add('bg-slate-900/40', 'text-slate-400', 'border-slate-800');
+                });
+                btn.classList.remove('bg-slate-900/40', 'text-slate-400', 'border-slate-800');
+                btn.classList.add('bg-slate-900/80', 'text-white', 'border-cyan-500/50', 'glow-border');
+
+                const info = sectionData[sec];
+                document.getElementById('info-title').innerHTML = `<i class="fa-solid fa-circle-info"></i> ${info.title}`;
+                document.getElementById('info-tag').innerText = info.tag;
+                document.getElementById('info-desc').innerText = info.desc;
+                document.getElementById('info-stat-1').innerText = info.stat1;
+                document.getElementById('info-stat-2').innerText = info.stat2;
+
+                focusSectionCamera(sec);
+            });
+        });
+
+        function focusSectionCamera(sec) {
+            let targetZ = 0;
+
+            switch (sec) {
+                case 'inlet': targetZ = -5.8; break;
+                case 'compressor': targetZ = -3.3; break;
+                case 'combustor': targetZ = 0.2; break;
+                case 'turbine': targetZ = 2.8; break;
+                case 'nozzle': targetZ = 5.2; break;
+                default: targetZ = 0; break;
+            }
+
+            const duration = 800;
+            const startZ = controls.target.z;
+            const startTime = performance.now();
+
+            function animCam(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const ease = 1 - Math.pow(1 - progress, 3);
+
+                controls.target.z = startZ + (targetZ - startZ) * ease;
+                controls.update();
+
+                if (progress < 1) {
+                    requestAnimationFrame(animCam);
+                }
+            }
+            requestAnimationFrame(animCam);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // --- 8. ANIMATION LOOP ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+
+            updateThermodynamics(delta);
+
+            // Rotor spins around Z axis proportionally to current RPM
+            // Velocidad visual limitada: con 28-36 álabes, girar más rápido que ~0.1 rad/frame
+            // produce aliasing temporal (parece que tambalea o gira al revés).
+            const omega1 = (engineState.currentRpm / 100) * 6;   // N1 (baja presión)
+            const omega2 = (engineState.n2 / 100) * 8.5;         // N2 (alta presión), más rápido
+            rotorGroup.rotation.z = (rotorGroup.rotation.z + omega1 * delta) % (Math.PI * 2);
+            highSpool.rotation.z = (highSpool.rotation.z + omega2 * delta) % (Math.PI * 2);
+
+            updateParticles();
+
+            orangeSpot.intensity = 0.5 + (engineState.burning ? (engineState.currentRpm / 100) * 4.0 : 0) + (engineState.afterburner ? 4.0 : 0.0);
+
+            updateAudio();
+            if ((frameCount++ % 6) === 0) drawTS();
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // ================= EXTRAS =================
+        let frameCount = 0;
+
+        // Vista explosionada
+        const secOffsets = { inlet: -4.8, compressor: -2.4, combustor: 0, turbine: 2.4, nozzle: 5.0 };
+        function applyExplode(e) {
+            engineState.explode = e;
+            for (const sec in secOffsets) {
+                sectionMeshes[sec].forEach(o => {
+                    if (o.userData.baseZ === undefined) o.userData.baseZ = o.position.z;
+                    o.position.z = o.userData.baseZ + secOffsets[sec] * e;
+                });
+            }
+            casingMaterial.transparent = true;
+            casingMaterial.opacity = 1 - 0.85 * e;
+            particleSystem.visible = e < 0.05;
+        }
+        document.getElementById('slider-explode').addEventListener('input', ev => applyExplode(parseInt(ev.target.value) / 100));
+
+        // Modo turborreactor / turbofán
+        document.getElementById('btn-fan').addEventListener('click', ev => {
+            engineState.fanMode = !engineState.fanMode;
+            fanStage.visible = engineState.fanMode;
+            nacelle.visible = engineState.fanMode;
+            ev.currentTarget.innerHTML = '<i class="fa-solid fa-fan mr-1.5"></i> ' + (engineState.fanMode ? 'TURBOFÁN' : 'TURBORREACTOR');
+        });
+
+        // Sonido (Web Audio): silbido de N1/N2 + rugido de gases
+        let audio = null, muted = false;
+        function initAudio() {
+            if (audio) { if (audio.ctx.state === 'suspended') audio.ctx.resume(); return; }
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const master = ctx.createGain(); master.gain.value = 0; master.connect(ctx.destination);
+                const mk = type => { const o = ctx.createOscillator(); o.type = type; const g = ctx.createGain(); g.gain.value = 0.05; o.connect(g); g.connect(master); o.start(); return o; };
+                const o1 = mk('sine'), o2 = mk('triangle');
+                const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+                const d = buf.getChannelData(0);
+                for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+                const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+                const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300;
+                const ng = ctx.createGain(); ng.gain.value = 0;
+                src.connect(lp); lp.connect(ng); ng.connect(master); src.start();
+                audio = { ctx, master, o1, o2, lp, ng };
+            } catch (e) { audio = null; }
+        }
+        function updateAudio() {
+            if (!audio) return;
+            const t = audio.ctx.currentTime, n1 = engineState.currentRpm, n2 = engineState.n2;
+            const th = parseFloat(engineState.thrust) || 0;
+            audio.o1.frequency.setTargetAtTime(40 + n1 * 6, t, 0.1);
+            audio.o2.frequency.setTargetAtTime(70 + n2 * 9, t, 0.1);
+            audio.lp.frequency.setTargetAtTime(200 + n1 * 14 + (engineState.afterburner ? 600 : 0), t, 0.15);
+            audio.ng.gain.setTargetAtTime(Math.min(0.35, 0.03 + (engineState.burning ? th / 300 : 0.02)), t, 0.2);
+            audio.master.gain.setTargetAtTime(muted ? 0 : Math.min(0.5, n1 / 60), t, 0.1);
+        }
+        document.getElementById('btn-sound').addEventListener('click', ev => {
+            initAudio();
+            muted = !muted;
+            ev.currentTarget.innerHTML = '<i class="fa-solid ' + (muted ? 'fa-volume-xmark' : 'fa-volume-high') + '"></i>';
+        });
+
+        // Diagrama T-s en vivo
+        function drawTS() {
+            const c = document.getElementById('ts-canvas'); if (!c) return;
+            const g = c.getContext('2d'), W = c.width, H = c.height;
+            g.clearRect(0, 0, W, H);
+            const pi = parseFloat(engineState.pressureRatio), T1 = 288, cp = 1.005, R = 0.287;
+            const T2 = T1 * (1 + (Math.pow(pi, 0.2857) - 1) / 0.85);
+            const T4 = Math.max(T1, engineState.egt + 273);
+            const T3 = engineState.burning ? T4 + (T2 - T1) : T2;
+            const s2 = cp * Math.log(T2 / T1) - R * Math.log(pi);
+            const s3 = s2 + cp * Math.log(T3 / T2);
+            const s4 = cp * Math.log(T4 / T1);
+            const X = s => 28 + (s + 0.1) / 1.7 * (W - 40), Y = T => H - 20 - (T - 200) / 1500 * (H - 34);
+            const iso = (Ta, Tb, sa, Tref) => { const a = []; for (let k = 0; k <= 20; k++) { const T = Ta + (Tb - Ta) * k / 20; a.push([X(sa + cp * Math.log(T / Tref)), Y(T)]); } return a; };
+            const segs = [
+                [[X(0), Y(T1)], [X(s2), Y(T2)]],              // 1-2 compresión
+                iso(T2, T3, s2, T2),                          // 2-3 calor a P cte
+                [[X(s3), Y(T3)], [X(s4), Y(T4)]],             // 3-4 expansión
+                iso(T4, T1, s4, T4)                           // 4-1 escape
+            ];
+            const hi = { compressor: 0, combustor: 1, turbine: 2, nozzle: 3 }[engineState.activeSection];
+            g.strokeStyle = 'rgba(148,163,184,0.5)'; g.lineWidth = 1; g.beginPath();
+            g.moveTo(26, 6); g.lineTo(26, H - 18); g.lineTo(W - 6, H - 18); g.stroke();
+            g.fillStyle = '#64748b'; g.font = '10px monospace'; g.fillText('T', 6, 14); g.fillText('s', W - 12, H - 6);
+            segs.forEach((pts, i) => {
+                g.strokeStyle = (hi === i) ? '#ff7a1a' : (hi === undefined ? '#22d3ee' : '#475569');
+                g.lineWidth = (hi === i) ? 3 : 2; g.beginPath();
+                pts.forEach((q, k) => k ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1])); g.stroke();
+            });
+            const P = [[X(0), Y(T1)], [X(s2), Y(T2)], [X(s3), Y(T3)], [X(s4), Y(T4)]];
+            g.fillStyle = '#e2e8f0';
+            P.forEach((q, i) => { g.beginPath(); g.arc(q[0], q[1], 3, 0, 7); g.fill(); g.fillText(String(i + 1), q[0] + 5, q[1] - 5); });
+            if (hi === undefined && engineState.activeSection !== 'inlet') {   // vista general: punto recorriendo el ciclo
+                const all = [].concat(...segs); const m = all[Math.floor(performance.now() / 40) % all.length];
+                g.fillStyle = '#fff'; g.beginPath(); g.arc(m[0], m[1], 4, 0, 7); g.fill();
+            }
+        }
+
+        window.onload = () => {
+            animate();
+        };
+    </script>
+</body>
+</html>
